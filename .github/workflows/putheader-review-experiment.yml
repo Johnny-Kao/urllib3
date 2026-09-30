@@ -1,0 +1,25 @@
+name: Putheader review experiment
+
+on:
+  push:
+    branches:
+      - bench/putheader-review-experiment
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run isolated benchmark
+        env:
+          PYTHONPATH: src
+        run: python benchmarks/putheader_review_experiment.py

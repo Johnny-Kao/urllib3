@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install fork
+        run: python -m pip install -e .
       - name: Run isolated benchmark
-        env:
-          PYTHONPATH: src
         run: python benchmarks/putheader_review_experiment.py

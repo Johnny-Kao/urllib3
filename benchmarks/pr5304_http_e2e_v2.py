@@ -67,6 +67,21 @@ def client(args):
                 metric["one_chunk" if tally[0]==1 else ("empty" if tally[0]==0 else "multi_chunk")]+=1
                 return result
         urllib3.response.GzipDecoder=Counting
+    # Phase probe is standalone: per-thread CPU captures only the decoder itself.
+    phase = {"decoder_cpu_ns": 0, "decoder_wall_ns": 0, "decoder_calls": 0}
+    if args.probe == "phase" and args.kind != "plain":
+        Original = urllib3.response.GzipDecoder
+        class Timed(Original):
+            def decompress(self, data, max_length=-1):
+                w = time.perf_counter_ns()
+                c = time.thread_time_ns()
+                try:
+                    return super().decompress(data, max_length)
+                finally:
+                    phase["decoder_cpu_ns"] += time.thread_time_ns() - c
+                    phase["decoder_wall_ns"] += time.perf_counter_ns() - w
+                    phase["decoder_calls"] += 1
+        urllib3.response.GzipDecoder = Timed
     pool=urllib3.PoolManager(maxsize=args.concurrency,block=True,retries=False,
             timeout=urllib3.Timeout(connect=5,read=45))
     url=f"http://127.0.0.1:{args.port}/"
@@ -118,6 +133,7 @@ def client(args):
             "alloc_peak_mib":peak_trace/1048576 if peak_trace is not None else None,
             "gc_delta":[b-a for a,b in zip(gc0,gc.get_count())],
             "coverage":metric if args.probe=="coverage" else None,
+            "phase":phase if args.probe=="phase" else None,
             "source":urllib3.response.__file__}),flush=True)
     finally: pool.clear()
 
@@ -162,6 +178,8 @@ def orchestration(args):
                 for version in (["base","candidate"] if rnd%2==0 else ["candidate","base"]):
                     item=call(version);item["round"]=rnd;raw.append(item)
                 save()
+            phase_base=call("base","phase")
+            phase_new=call("candidate","phase")
             coverage=call("candidate","coverage")
             alloc_base=call("base","alloc")
             alloc_new=call("candidate","alloc")
@@ -179,7 +197,11 @@ def orchestration(args):
                   "cpu_s_per_gib_candidate":med(new,"cpu_s_per_gib"),
                   "rss_delta_mib":med(new,"rss_max_mib")-med(base,"rss_max_mib"),
                   "alloc_delta_mib":alloc_new["alloc_peak_mib"]-alloc_base["alloc_peak_mib"],
-                  "coverage":coverage["coverage"],"pair_results":pairs}
+                  "coverage":coverage["coverage"],"pair_results":pairs,
+                  "phase_decoder_cpu_ms_base":phase_base["phase"]["decoder_cpu_ns"]/1e6,
+                  "phase_decoder_cpu_ms_candidate":phase_new["phase"]["decoder_cpu_ns"]/1e6,
+                  "phase_calls_base":phase_base["phase"]["decoder_calls"],
+                  "phase_calls_candidate":phase_new["phase"]["decoder_calls"]}
             summary.append(item);save()
             print(json.dumps(item),flush=True)
         finally:
@@ -196,7 +218,7 @@ def main():
     p.add_argument("--expected",type=int,default=0);p.add_argument("--concurrency",type=int,default=8)
     p.add_argument("--mode",default="preload");p.add_argument("--probe",default="none")
     p.add_argument("--scenario",default="");p.add_argument("--requests",type=int,default=12)
-    p.add_argument("--rounds",type=int,default=4)
+    p.add_argument("--rounds",type=int,default=8)
     a=p.parse_args()
     if a.server:serve(a)
     elif a.client:client(a)

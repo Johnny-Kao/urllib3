@@ -1,0 +1,71 @@
+name: PR5304 controlled HTTP end-to-end A/B
+
+on:
+  push:
+    branches:
+      - research/gzip-http-e2e-ab-20261009
+    paths:
+      - benchmarks/pr5304_http_e2e_ab.py
+      - .github/workflows/pr5304-http-e2e-ab.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify immutable version refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=a164d79c8cf760f222daa2dc7f67d0e1ca7fb17c
+          NEW=6ae668b355863f72d4381c4696c4748cd386a7d6
+          git cat-file -e "${BASE}^{commit}"
+          git cat-file -e "${NEW}^{commit}"
+          git worktree add --detach _ab_base "$BASE"
+          git worktree add --detach _ab_candidate "$NEW"
+          test "$(git -C _ab_base rev-parse HEAD)" = "$BASE"
+          test "$(git -C _ab_candidate rev-parse HEAD)" = "$NEW"
+          git diff --stat "$BASE" "$NEW"
+      - name: Install identical dependencies
+        run: python -m pip install --disable-pip-version-check "psutil==6.1.1"
+      - name: Hardware provenance
+        run: |
+          uname -a
+          lscpu || true
+          free -m || true
+          python -V
+      - name: Paired A/B experiment
+        run: python benchmarks/pr5304_http_e2e_ab.py --rounds 2
+      - name: Job summary
+        if: success()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, os
+          data=json.load(open('ab-results/summary.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
+              f.write('# urllib3 PR5304 — loopback HTTP A/B\n\n')
+              f.write('Pinned baseline: '+data['metadata']['baseline_sha']+'; candidate: '+data['metadata']['candidate_sha']+'\n\n')
+              f.write('| Scenario | Throughput Δ | CPU saved | Peak RSS Δ (MiB) | Fast-path rate |\n|---|---:|---:|---:|---:|\n')
+              for r in data['summary']:
+                  f.write(f"| {r['scenario']} | {r['throughput_change_pct']:+.2f}% | {r['cpu_saved_pct']:+.2f}% | {r['rss_change_mib']:+.2f} | {r['fastpath_hit_rate_pct']:.1f}% |\n")
+              f.write('\nLoopback server and client measured together. Does not establish public network performance or production hit-rate.\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr5304-http-ab
+          path: ab-results/
+          if-no-files-found: ignore
+          retention-days: 3

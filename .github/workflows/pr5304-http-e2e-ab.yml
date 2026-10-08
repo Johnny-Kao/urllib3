@@ -56,7 +56,7 @@ jobs:
           free -m || true
           python -V
       - name: Paired A/B experiment
-        run: python benchmarks/pr5304_http_e2e_v2.py --rounds 4
+        run: python benchmarks/pr5304_http_e2e_v2.py --rounds 8
       - name: Job summary
         if: success()
         shell: bash
@@ -66,7 +66,7 @@ jobs:
           data=json.load(open('ab-results-v2/summary.json'))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
               f.write('# urllib3 PR5304 — loopback HTTP A/B\n\n')
-              f.write('Pinned baseline: '+data['metadata']['baseline_sha']+'; candidate: '+data['metadata']['candidate_sha']+'\n\n')
+              f.write('Pinned baseline: '+data['metadata']['base']+'; candidate: '+data['metadata']['candidate']+'\n\n')
               f.write('| Scenario | Throughput Δ | CPU saved | Peak RSS Δ (MiB) | Fast-path rate |\n|---|---:|---:|---:|---:|\n')
               for r in data['summary']:
                   f.write(f"| {r['scenario']} | {r['throughput_pct']:+.2f}% | {r['cpu_saved_pct']:+.2f}% | {r['rss_delta_mib']:+.2f} | {(100*r['coverage']['one_chunk']/max(1,r['coverage']['decode_calls'])):.1f}% |\n")

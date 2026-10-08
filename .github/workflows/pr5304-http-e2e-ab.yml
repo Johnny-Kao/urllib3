@@ -6,6 +6,7 @@ on:
       - research/gzip-http-e2e-ab-20261009
     paths:
       - benchmarks/pr5304_http_e2e_ab.py
+      - benchmarks/pr5304_http_e2e_v2.py
       - .github/workflows/pr5304-http-e2e-ab.yml
   workflow_dispatch:
 
@@ -55,26 +56,26 @@ jobs:
           free -m || true
           python -V
       - name: Paired A/B experiment
-        run: python benchmarks/pr5304_http_e2e_ab.py --rounds 2
+        run: python benchmarks/pr5304_http_e2e_v2.py --rounds 4
       - name: Job summary
         if: success()
         shell: bash
         run: |
           python - <<'PY'
           import json, os
-          data=json.load(open('ab-results/summary.json'))
+          data=json.load(open('ab-results-v2/summary.json'))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
               f.write('# urllib3 PR5304 — loopback HTTP A/B\n\n')
               f.write('Pinned baseline: '+data['metadata']['baseline_sha']+'; candidate: '+data['metadata']['candidate_sha']+'\n\n')
               f.write('| Scenario | Throughput Δ | CPU saved | Peak RSS Δ (MiB) | Fast-path rate |\n|---|---:|---:|---:|---:|\n')
               for r in data['summary']:
-                  f.write(f"| {r['scenario']} | {r['throughput_change_pct']:+.2f}% | {r['cpu_saved_pct']:+.2f}% | {r['rss_change_mib']:+.2f} | {r['fastpath_hit_rate_pct']:.1f}% |\n")
+                  f.write(f"| {r['scenario']} | {r['throughput_pct']:+.2f}% | {r['cpu_saved_pct']:+.2f}% | {r['rss_delta_mib']:+.2f} | {(100*r['coverage']['one_chunk']/max(1,r['coverage']['decode_calls'])):.1f}% |\n")
               f.write('\nLoopback server and client measured together. Does not establish public network performance or production hit-rate.\n')
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pr5304-http-ab
-          path: ab-results/
+          path: ab-results-v2/
           if-no-files-found: ignore
           retention-days: 3

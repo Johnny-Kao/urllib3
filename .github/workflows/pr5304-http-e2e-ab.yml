@@ -39,6 +39,15 @@ jobs:
           git diff --stat "$BASE" "$NEW"
       - name: Install identical dependencies
         run: python -m pip install --disable-pip-version-check "psutil==6.1.1"
+      - name: Generate VCS version modules in both worktrees
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --no-deps -e ./_ab_base
+          python -m pip install --no-deps -e ./_ab_candidate
+          test -f _ab_base/src/urllib3/_version.py
+          test -f _ab_candidate/src/urllib3/_version.py
+          python -c "import ast,pathlib; [ast.parse((pathlib.Path(p)/'src/urllib3/_version.py').read_text()) for p in ['_ab_base','_ab_candidate']]"
       - name: Hardware provenance
         run: |
           uname -a
